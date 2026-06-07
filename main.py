@@ -424,45 +424,39 @@ def is_cloudflare_interstitial(sb) -> bool:
         return False
 
 def bypass_cloudflare_interstitial(sb, max_attempts=3) -> bool:
-    logger.info("检测到 Cloudflare 整页挑战，尝试绕过...")
+    logger.info("检测到 Cloudflare 整页挑战，尝试绕过 (Turnstile)...")
 
     for attempt in range(max_attempts):
-        logger.info(f"CF 绕过尝试 {attempt+1}/{max_attempts}")
+        logger.info(f"Turnstile 绕过尝试 {attempt+1}/{max_attempts}")
         try:
-            # 等待 Cloudflare 的验证 iframe 出现（通常 id 以 "cf-chl-widget-" 开头）
-            if not sb.execute_script(
-                "return !!document.querySelector('iframe[src*=\"challenges.cloudflare.com\"]');"
-            ):
-                # 如果没有 iframe，可能是未被加载，使用通用点击
+            try:
                 sb.uc_gui_click_captcha()
-            else:
-                # 切换到 Cloudflare 的 iframe 并点击复选框
-                sb.switch_to_frame('iframe[src*="challenges.cloudflare.com"]')
-                # 等待复选框可点击
-                sb.wait_for_element_visible('input[type="checkbox"]', timeout=5)
-                sb.click('input[type="checkbox"]')
-                # 切回主页面
-                sb.switch_to_default_content()
-            
-            # 等待验证完成
-            time.sleep(6)
-            if not is_cloudflare_interstitial(sb):
-                logger.info("✅ Cloudflare 挑战已通过")
-                return True
-        except Exception as e:
-            logger.warning(f"CF 绕过失败: {e}")
-        
-        time.sleep(3)
+                logger.info("已调用 uc_gui_click_captcha")
+            except Exception as e:
+                logger.warning(f"uc_gui_click_captcha 失败: {e}，直接等待自动验证")
 
-    logger.info("尝试刷新页面重试...")
-    for _ in range(2):   # 可以多刷新几次
-        try:
-            sb.uc_open_with_reconnect(LOGIN_URL, reconnect_time=10)
-            time.sleep(5)
-            if not is_cloudflare_interstitial(sb):
-                return True
-        except:
-            pass
+            for _ in range(60):
+                if not is_cloudflare_interstitial(sb):
+                    logger.info("✅ Turnstile 挑战已通过")
+                    return True
+                time.sleep(1)
+
+            logger.warning(f"等待超时，尝试下一轮")
+
+        except Exception as e:
+            logger.warning(f"Turnstile 绕过尝试 {attempt+1} 出错: {e}")
+
+        time.sleep(2)
+
+    logger.info("Turnstile 绕过失败，刷新页面重试...")
+    try:
+        sb.uc_open_with_reconnect(LOGIN_URL, reconnect_time=12)
+        time.sleep(8)
+        if not is_cloudflare_interstitial(sb):
+            logger.info("✅ 刷新后 Turnstile 已通过")
+            return True
+    except Exception as e:
+        logger.error(f"刷新重试失败: {e}")
 
     return False
 
